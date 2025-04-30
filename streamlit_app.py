@@ -48,8 +48,7 @@ sales["match_key"] = sales["Medicines Name"].str.strip().str.lower() + "|" + sal
 
 sales_merged = sales.merge(master[["Item Code", "match_key"]], on="match_key", how="left")
 
-                               left_on=["Medicines Name", "Pack Size"],
-                               right_on=["Medicines Name", "Unit"], how="left")
+                               )
     sales_merged = sales_merged.dropna(subset=["Item Code"])
     sales_summary = sales_merged.groupby("Item Code").agg({
         "Total Quantity(Strip)": "sum"
