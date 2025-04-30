@@ -1,25 +1,111 @@
 
 import streamlit as st
-from datetime import datetime
 import pandas as pd
+import re
+import os
+from datetime import datetime
+from io import BytesIO
 
 st.set_page_config(page_title="Double Plus | Replenishment", layout="wide")
+st.markdown("<style>div.stButton > button {background-color:#0071BC; color:white;}</style>", unsafe_allow_html=True)
 
-# Logo Header
+# Logo and title
 st.image("Double Plus Logo.png", width=180)
-st.title("🧮 Replenishment & Procurement Generator")
-st.markdown("Min Stock = 2 Weeks of Sales | Max Stock = 4 Weeks of Sales")
+st.title("🧮 Daily Replenishment & Procurement Generator")
+st.markdown("Min Stock = 2 Weeks | Max Stock = 4 Weeks (configurable in Admin)")
 st.markdown("---")
 
-# File uploads for daily use
-st.header("📤 Upload Daily Stock Files")
-store_file = st.file_uploader("📦 Upload Store Stock CSV (Loose Units)", type="csv", key="store")
-warehouse_file = st.file_uploader("🏬 Upload Warehouse Stock CSV (Loose Units)", type="csv", key="warehouse")
+# Upload files
+st.header("📤 Upload Today's Store & Warehouse Stock")
+store_file = st.file_uploader("🏪 Store Stock CSV", type="csv")
+warehouse_file = st.file_uploader("🏬 Warehouse Stock CSV", type="csv")
 
-# Only shows processing button if both files present
 if store_file and warehouse_file:
-    st.success("✅ Files uploaded successfully. Click below to generate output.")
-    if st.button("⚙️ Generate Replenishment & Procurement Files"):
-        st.info("This version does not include logic – only UI layout shown here.")
+    st.success("✅ Files uploaded successfully")
+
+    if st.button("⚙️ Generate Replenishment & Procurement"):
+        # Load supporting data
+        try:
+            master = pd.read_csv("Overall Master.csv")
+            status = pd.read_csv("Status.csv")
+            sales = pd.read_csv("sales_file.csv")
+            config = {"min_weeks": 2, "max_weeks": 4}
+            if os.path.exists("config.json"):
+                import json
+                with open("config.json", "r") as f:
+                    config = json.load(f)
+
+            # Preprocessing
+            master = master.merge(status, on="Item Code", how="left")
+            master["Status"] = master["Status"].fillna("Active")
+            master["match_key"] = master["Medicines Name"].str.strip().str.lower() + "|" + master["Unit"].str.strip().str.lower()
+            sales["match_key"] = sales["Medicines Name"].str.strip().str.lower() + "|" + sales["Pack Size"].str.strip().str.lower()
+
+            merged = sales.merge(master[["Item Code", "match_key"]], on="match_key", how="left").dropna(subset=["Item Code"])
+            summary = merged.groupby("Item Code").agg({"Total Quantity(Strip)": "sum"}).reset_index()
+            summary["Weekly Sale"] = summary["Total Quantity(Strip)"] / 24
+            summary["Min Stock"] = (summary["Weekly Sale"] * config["min_weeks"]).round().astype(int)
+            summary["Max Stock"] = (summary["Weekly Sale"] * config["max_weeks"]).round().astype(int)
+            master = master.merge(summary[["Item Code", "Min Stock", "Max Stock"]], on="Item Code", how="left")
+            master["Min Stock"] = master["Min Stock"].fillna(0).astype(int)
+            master["Max Stock"] = master["Max Stock"].fillna(0).astype(int)
+
+            store = pd.read_csv(store_file)
+            warehouse = pd.read_csv(warehouse_file)
+            df = master.merge(warehouse[["Item Code", "Stock"]].rename(columns={"Stock": "Warehouse Stock"}), on="Item Code", how="left")
+            df = df.merge(store[["Item Code", "Stock"]].rename(columns={"Stock": "Store Stock"}), on="Item Code", how="left")
+            df["Warehouse Stock"] = df["Warehouse Stock"].fillna(0)
+            df["Store Stock"] = df["Store Stock"].fillna(0)
+
+            def to_strips(row, column):
+                unit = str(row["Unit"]).lower()
+                val = row[column]
+                if any(x in unit for x in ["ml", "ltr", "gm", "g", "l"]):
+                    return val
+                match = re.search(r"(\d+)", unit)
+                if match:
+                    divisor = int(match.group(1))
+                    return round(val / divisor, 2) if divisor else val
+                return val
+
+            df["Store Stock (Strips)"] = df.apply(lambda x: to_strips(x, "Store Stock"), axis=1)
+            df["Warehouse Stock (Strips)"] = df.apply(lambda x: to_strips(x, "Warehouse Stock"), axis=1)
+
+            def calc_replenishment(row):
+                if row["Status"] == "Discontinued":
+                    return 0
+                if row["Store Stock (Strips)"] < row["Min Stock"] and row["Warehouse Stock (Strips)"] > 0:
+                    return min(row["Max Stock"] - row["Store Stock (Strips)"], row["Warehouse Stock (Strips)"])
+                return 0
+
+            def calc_procurement(row):
+                if row["Status"] == "Discontinued":
+                    return 0
+                total = row["Store Stock (Strips)"] + row["Warehouse Stock (Strips)"]
+                return max(row["Max Stock"] - total, 0) if total < row["Min Stock"] else 0
+
+            df["Replenishment Qty"] = df.apply(calc_replenishment, axis=1)
+            df["Procurement Qty"] = df.apply(calc_procurement, axis=1)
+
+            today = datetime.today().strftime("%Y-%m-%d")
+
+            rep = df[df["Replenishment Qty"] > 0][
+                ["Item Code", "Medicines Name", "Unit", "Min Stock", "Max Stock", "Replenishment Qty"]
+            ].rename(columns={"Unit": "Pack Size", "Replenishment Qty": "Qty"})
+
+            proc = df[df["Procurement Qty"] > 0][
+                ["Item Code", "Medicines Name", "Unit", "Min Stock", "Max Stock", "Procurement Qty"]
+            ].rename(columns={"Unit": "Pack Size", "Procurement Qty": "Qty"})
+
+            def to_excel(df):
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    df.to_excel(writer, index=False)
+                return buffer.getvalue()
+
+            st.download_button("⬇️ Download Replenishment", data=to_excel(rep), file_name=f"Replenishment_List_{today}.xlsx")
+            st.download_button("⬇️ Download Procurement", data=to_excel(proc), file_name=f"Procurement_List_{today}.xlsx")
+        except Exception as e:
+            st.error(f"⚠️ Error: {e}")
 else:
-    st.warning("Please upload both store and warehouse stock files to continue.")
+    st.info("Upload both stock files to begin.")
