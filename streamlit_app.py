@@ -14,7 +14,7 @@ st.markdown("""
 ### Upload your data files below
 
 **One-Time Uploads:**
-- item_master.csv
+- Overall Master.csv
 - status.csv
 - sales_file.csv (6-month sales, can be updated monthly)
 
@@ -24,14 +24,14 @@ st.markdown("""
 """)
 
 # File Uploads
-master_file = st.file_uploader("🧾 Upload item_master.csv", type="csv")
+master_file = st.file_uploader("🧾 Upload Overall Master.csv", type="csv")
 status_file = st.file_uploader("📋 Upload status.csv", type="csv")
 sales_file = st.file_uploader("📊 Upload 6-month sales_file.csv (Strips)", type="csv")
 warehouse_file = st.file_uploader("🏬 Upload Warehouse Stock CSV (Loose Units)", type="csv")
 store_file = st.file_uploader("🏪 Upload Store Stock CSV (Loose Units)", type="csv")
 
 if master_file and status_file and sales_file and warehouse_file and store_file:
-    master = pd.read_csv(master_file)
+    master = pd.read_csv(master_file).iloc[:, :4]  # drop unnamed trailing columns
     status = pd.read_csv(status_file)
     sales = pd.read_csv(sales_file)
     warehouse = pd.read_csv(warehouse_file)
