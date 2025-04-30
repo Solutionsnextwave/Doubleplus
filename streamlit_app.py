@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -31,7 +30,7 @@ warehouse_file = st.file_uploader("🏬 Upload Warehouse Stock CSV (Loose Units)
 store_file = st.file_uploader("🏪 Upload Store Stock CSV (Loose Units)", type="csv")
 
 if master_file and status_file and sales_file and warehouse_file and store_file:
-    master = pd.read_csv(master_file).iloc[:, :4]  # drop unnamed trailing columns
+    master = pd.read_csv(master_file).iloc[:, :4]  # drop extra unnamed columns
     status = pd.read_csv(status_file)
     sales = pd.read_csv(sales_file)
     warehouse = pd.read_csv(warehouse_file)
@@ -40,31 +39,31 @@ if master_file and status_file and sales_file and warehouse_file and store_file:
     master = master.merge(status, on="Item Code", how="left")
     master["Status"] = master["Status"].fillna("Active")
 
-    # Sales Summary
-    
-# Use normalized matching key instead of direct merge
-master["match_key"] = master["Medicines Name"].str.strip().str.lower() + "|" + master["Unit"].str.strip().str.lower()
-sales["match_key"] = sales["Medicines Name"].str.strip().str.lower() + "|" + sales["Pack Size"].str.strip().str.lower()
+    # Create normalized match_key for better merging
+    master["match_key"] = master["Medicines Name"].str.strip().str.lower() + "|" + master["Unit"].str.strip().str.lower()
+    sales["match_key"] = sales["Medicines Name"].str.strip().str.lower() + "|" + sales["Pack Size"].str.strip().str.lower()
 
-sales_merged = sales.merge(master[["Item Code", "match_key"]], on="match_key", how="left")
+    sales_merged = sales.merge(master[["Item Code", "match_key"]], on="match_key", how="left")
     sales_merged = sales_merged.dropna(subset=["Item Code"])
+
     sales_summary = sales_merged.groupby("Item Code").agg({
         "Total Quantity(Strip)": "sum"
     }).reset_index()
     sales_summary["Weekly Sale"] = sales_summary["Total Quantity(Strip)"] / 24
     sales_summary["Min Stock"] = (sales_summary["Weekly Sale"] * 2).round().astype(int)
     sales_summary["Max Stock"] = (sales_summary["Weekly Sale"] * 4).round().astype(int)
+
     master = master.merge(sales_summary[["Item Code", "Min Stock", "Max Stock"]], on="Item Code", how="left")
     master["Min Stock"] = master["Min Stock"].fillna(0).astype(int)
     master["Max Stock"] = master["Max Stock"].fillna(0).astype(int)
 
-    # Merge Current Stock
+    # Merge Stock Data
     data = master.merge(warehouse[["Item Code", "Stock"]].rename(columns={"Stock": "Warehouse Stock"}), on="Item Code", how="left")
     data = data.merge(store[["Item Code", "Stock"]].rename(columns={"Stock": "Store Stock"}), on="Item Code", how="left")
     data["Warehouse Stock"] = data["Warehouse Stock"].fillna(0)
     data["Store Stock"] = data["Store Stock"].fillna(0)
 
-    # Convert loose units to strips
+    # Convert loose to strips
     def to_strips(row, column):
         unit = str(row["Unit"]).lower()
         val = row[column]
@@ -79,7 +78,7 @@ sales_merged = sales.merge(master[["Item Code", "match_key"]], on="match_key", h
     data["Store Stock (Strips)"] = data.apply(lambda x: to_strips(x, "Store Stock"), axis=1)
     data["Warehouse Stock (Strips)"] = data.apply(lambda x: to_strips(x, "Warehouse Stock"), axis=1)
 
-    # Replenishment and Procurement Logic
+    # Calculate Replenishment and Procurement
     def calc_replenishment(row):
         if row["Status"] == "Discontinued":
             return 0
