@@ -41,7 +41,13 @@ if master_file and status_file and sales_file and warehouse_file and store_file:
     master["Status"] = master["Status"].fillna("Active")
 
     # Sales Summary
-    sales_merged = sales.merge(master[["Item Code", "Medicines Name", "Unit"]],
+    
+# Use normalized matching key instead of direct merge
+master["match_key"] = master["Medicines Name"].str.strip().str.lower() + "|" + master["Unit"].str.strip().str.lower()
+sales["match_key"] = sales["Medicines Name"].str.strip().str.lower() + "|" + sales["Pack Size"].str.strip().str.lower()
+
+sales_merged = sales.merge(master[["Item Code", "match_key"]], on="match_key", how="left")
+
                                left_on=["Medicines Name", "Pack Size"],
                                right_on=["Medicines Name", "Unit"], how="left")
     sales_merged = sales_merged.dropna(subset=["Item Code"])
