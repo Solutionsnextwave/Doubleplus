@@ -32,6 +32,10 @@ if store_file and warehouse_file:
                 with open("config.json", "r") as f:
                     config = json.load(f)
 
+            master.columns = master.columns.str.strip()
+            status.columns = status.columns.str.strip()
+            sales.columns = sales.columns.str.strip()
+
             master = master.loc[:, ~master.columns.str.contains("^Unnamed")]
             status = status.loc[:, ~status.columns.str.contains("^Unnamed")]
             master = master.merge(status[["Item Code", "Status"]], on="Item Code", how="left")
@@ -100,6 +104,12 @@ if store_file and warehouse_file:
                 with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                     dataframe.to_excel(writer, index=False)
                 return buffer.getvalue()
+
+            st.subheader("📋 Preview Replenishment (Top 10)")
+            st.dataframe(rep.head(10))
+
+            st.subheader("📋 Preview Procurement (Top 10)")
+            st.dataframe(proc.head(10))
 
             st.download_button("⬇️ Download Replenishment", data=to_excel(rep), file_name=f"Replenishment_List_{today}.xlsx")
             st.download_button("⬇️ Download Procurement", data=to_excel(proc), file_name=f"Procurement_List_{today}.xlsx")
