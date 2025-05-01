@@ -91,7 +91,7 @@ if store_file and warehouse_file:
 
             today = datetime.today().strftime("%Y-%m-%d")
 
-            export_cols = ["Item Code", "Medicines Name", "Manufacturer/Company", "Unit", "Min Stock", "Max Stock"]
+            export_cols = ["Item Code", "Medicines Name", "Manufacturer/Company", "Unit"]
 
             rep = df[df["Replenishment Qty"] > 0][export_cols + ["Replenishment Qty"]]
             rep = rep.rename(columns={"Unit": "Pack Size", "Replenishment Qty": "Qty"})
