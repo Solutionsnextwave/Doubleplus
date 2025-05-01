@@ -15,16 +15,15 @@ st.title("🧮 Daily Replenishment & Procurement Generator")
 st.markdown("Min = 2 weeks, Max = 4 weeks (configurable in Admin)")
 st.markdown("---")
 
-# Upload daily stock files
 st.header("📤 Upload Daily Stock Files")
 store_file = st.file_uploader("🏪 Upload Store Stock CSV", type="csv")
 warehouse_file = st.file_uploader("🏬 Upload Warehouse Stock CSV", type="csv")
 
-# Run processing
 if store_file and warehouse_file:
     st.success("✅ Files uploaded successfully")
     if st.button("⚙️ Generate Replenishment & Procurement"):
         try:
+            # Load base files
             master = pd.read_csv("Overall Master.csv", low_memory=False)
             status = pd.read_csv("Status.csv", low_memory=False)
             sales = pd.read_csv("sales_file.csv", low_memory=False)
@@ -33,7 +32,7 @@ if store_file and warehouse_file:
                 with open("config.json", "r") as f:
                     config = json.load(f)
 
-            # Merge and prepare
+            # Build master key
             master = master.merge(status, on="Item Code", how="left")
             master["Status"] = master["Status"].fillna("Active")
             master["match_key"] = master["Medicines Name"].str.strip().str.lower() + "|" + master["Unit"].str.strip().str.lower()
@@ -44,12 +43,19 @@ if store_file and warehouse_file:
             summary["Weekly Sale"] = summary["Total Quantity(Strip)"] / 24
             summary["Min Stock"] = (summary["Weekly Sale"] * config["min_weeks"]).round().astype(int)
             summary["Max Stock"] = (summary["Weekly Sale"] * config["max_weeks"]).round().astype(int)
+
             master = master.merge(summary[["Item Code", "Min Stock", "Max Stock"]], on="Item Code", how="left")
             master["Min Stock"] = master["Min Stock"].fillna(0).astype(int)
             master["Max Stock"] = master["Max Stock"].fillna(0).astype(int)
 
             store = pd.read_csv(store_file, low_memory=False)
             warehouse = pd.read_csv(warehouse_file, low_memory=False)
+
+            if not {"Item Code", "Stock"}.issubset(store.columns):
+                raise ValueError("❌ 'Item Code' and 'Stock' columns are required in Store Stock file.")
+            if not {"Item Code", "Stock"}.issubset(warehouse.columns):
+                raise ValueError("❌ 'Item Code' and 'Stock' columns are required in Warehouse Stock file.")
+
             df = master.merge(warehouse[["Item Code", "Stock"]].rename(columns={"Stock": "Warehouse Stock"}), on="Item Code", how="left")
             df = df.merge(store[["Item Code", "Stock"]].rename(columns={"Stock": "Store Stock"}), on="Item Code", how="left")
             df["Warehouse Stock"] = df["Warehouse Stock"].fillna(0)
@@ -86,6 +92,7 @@ if store_file and warehouse_file:
             df["Procurement Qty"] = df.apply(calc_procurement, axis=1)
 
             today = datetime.today().strftime("%Y-%m-%d")
+
             rep = df[df["Replenishment Qty"] > 0][
                 ["Item Code", "Medicines Name", "Unit", "Min Stock", "Max Stock", "Replenishment Qty"]
             ].rename(columns={"Unit": "Pack Size", "Replenishment Qty": "Qty"})
@@ -102,7 +109,8 @@ if store_file and warehouse_file:
 
             st.download_button("⬇️ Download Replenishment", data=to_excel(rep), file_name=f"Replenishment_List_{today}.xlsx")
             st.download_button("⬇️ Download Procurement", data=to_excel(proc), file_name=f"Procurement_List_{today}.xlsx")
+
         except Exception as e:
             st.error(f"⚠️ Error: {e}")
 else:
-    st.info("Please upload both stock files above to proceed.")
+    st.info("Please upload both store and warehouse stock files to begin.")
