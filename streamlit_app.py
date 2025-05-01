@@ -24,17 +24,24 @@ if store_file and warehouse_file:
     if st.button("⚙️ Generate Replenishment & Procurement"):
         try:
             # Load base files
-            master = pd.read_csv("Overall Master.csv", low_memory=False)
-            status = pd.read_csv("Status.csv", low_memory=False)
+            master = pd.read_csv("Overall Master.csv", low_memory=False).dropna(axis=1, how="all")
+            status = pd.read_csv("Status.csv", low_memory=False).dropna(axis=1, how="all")
             sales = pd.read_csv("sales_file.csv", low_memory=False)
+
             config = {"min_weeks": 2, "max_weeks": 4}
             if os.path.exists("config.json"):
                 with open("config.json", "r") as f:
                     config = json.load(f)
 
-            # Build master key
-            master = master.merge(status, on="Item Code", how="left")
+            # Clean and prepare
+            master = master.loc[:, ~master.columns.str.contains("^Unnamed")]
+            status = status.loc[:, ~status.columns.str.contains("^Unnamed")]
+
+            # Merge Status
+            master = master.merge(status[["Item Code", "Status"]], on="Item Code", how="left")
             master["Status"] = master["Status"].fillna("Active")
+
+            # Build match keys
             master["match_key"] = master["Medicines Name"].str.strip().str.lower() + "|" + master["Unit"].str.strip().str.lower()
             sales["match_key"] = sales["Medicines Name"].str.strip().str.lower() + "|" + sales["Pack Size"].str.strip().str.lower()
 
@@ -48,19 +55,17 @@ if store_file and warehouse_file:
             master["Min Stock"] = master["Min Stock"].fillna(0).astype(int)
             master["Max Stock"] = master["Max Stock"].fillna(0).astype(int)
 
+            # Read uploaded stocks
             store = pd.read_csv(store_file, low_memory=False)
             warehouse = pd.read_csv(warehouse_file, low_memory=False)
 
-            if not {"Item Code", "Stock"}.issubset(store.columns):
-                raise ValueError("❌ 'Item Code' and 'Stock' columns are required in Store Stock file.")
-            if not {"Item Code", "Stock"}.issubset(warehouse.columns):
-                raise ValueError("❌ 'Item Code' and 'Stock' columns are required in Warehouse Stock file.")
-
+            # Merge stock
             df = master.merge(warehouse[["Item Code", "Stock"]].rename(columns={"Stock": "Warehouse Stock"}), on="Item Code", how="left")
             df = df.merge(store[["Item Code", "Stock"]].rename(columns={"Stock": "Store Stock"}), on="Item Code", how="left")
             df["Warehouse Stock"] = df["Warehouse Stock"].fillna(0)
             df["Store Stock"] = df["Store Stock"].fillna(0)
 
+            # Convert to strips
             def to_strips(row, column):
                 unit = str(row["Unit"]).lower()
                 val = row[column]
@@ -75,6 +80,7 @@ if store_file and warehouse_file:
             df["Store Stock (Strips)"] = df.apply(lambda x: to_strips(x, "Store Stock"), axis=1)
             df["Warehouse Stock (Strips)"] = df.apply(lambda x: to_strips(x, "Warehouse Stock"), axis=1)
 
+            # Logic
             def calc_replenishment(row):
                 if row["Status"] == "Discontinued":
                     return 0
@@ -93,18 +99,18 @@ if store_file and warehouse_file:
 
             today = datetime.today().strftime("%Y-%m-%d")
 
-            rep = df[df["Replenishment Qty"] > 0][
-                ["Item Code", "Medicines Name", "Unit", "Min Stock", "Max Stock", "Replenishment Qty"]
-            ].rename(columns={"Unit": "Pack Size", "Replenishment Qty": "Qty"})
+            export_cols = ["Item Code", "Medicines Name", "Unit", "Min Stock", "Max Stock"]
 
-            proc = df[df["Procurement Qty"] > 0][
-                ["Item Code", "Medicines Name", "Unit", "Min Stock", "Max Stock", "Procurement Qty"]
-            ].rename(columns={"Unit": "Pack Size", "Procurement Qty": "Qty"})
+            rep = df[df["Replenishment Qty"] > 0][export_cols + ["Replenishment Qty"]]
+            rep = rep.rename(columns={"Unit": "Pack Size", "Replenishment Qty": "Qty"})
 
-            def to_excel(df):
+            proc = df[df["Procurement Qty"] > 0][export_cols + ["Procurement Qty"]]
+            proc = proc.rename(columns={"Unit": "Pack Size", "Procurement Qty": "Qty"})
+
+            def to_excel(dataframe):
                 buffer = BytesIO()
                 with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                    df.to_excel(writer, index=False)
+                    dataframe.to_excel(writer, index=False)
                 return buffer.getvalue()
 
             st.download_button("⬇️ Download Replenishment", data=to_excel(rep), file_name=f"Replenishment_List_{today}.xlsx")
