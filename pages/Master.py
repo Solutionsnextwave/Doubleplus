@@ -1,29 +1,37 @@
 
 import streamlit as st
 import pandas as pd
-import os
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
+st.set_page_config(page_title="Double Plus | Master Editor", layout="wide")
+st.title("📘 Master Data Editor")
 PASSWORD = "Nemo_63"
-st.set_page_config(page_title="Master View - Double Plus", layout="wide")
 
-pwd = st.text_input("Enter master page password", type="password")
-if pwd != PASSWORD:
-    st.stop()
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
-st.title("📘 Master Management")
+if not st.session_state["authenticated"]:
+    password = st.text_input("Enter Password", type="password")
+    if password == PASSWORD:
+        st.session_state["authenticated"] = True
+        st.experimental_rerun()
+    else:
+        st.stop()
 
-if not os.path.exists("Overall Master.csv"):
-    st.warning("Please upload Master from Admin Page first.")
-    st.stop()
+st.markdown("Edit `Status` or `Unit` directly. Click 'Save Changes' to update the Master.")
 
-df = pd.read_csv("Overall Master.csv", low_memory=False)
-search = st.text_input("🔍 Search by Medicine Name or Item Code").lower()
+master = pd.read_csv("Overall Master.csv")
+status_df = pd.read_csv("Status.csv")
+df = master.merge(status_df[["Item Code", "Status"]], on="Item Code", how="left")
+df["Status"] = df["Status"].fillna("Active")
 
-if search:
-    df = df[df["Medicines Name"].str.lower().str.contains(search) | df["Item Code"].str.lower().str.contains(search)]
+gb = GridOptionsBuilder.from_dataframe(df)
+gb.configure_columns(["Item Code", "Medicines Name", "Unit", "Status"], editable=True)
+gb.configure_pagination()
+grid = AgGrid(df, gridOptions=gb.build(), update_mode=GridUpdateMode.MANUAL)
 
-edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="master_editor")
-
-if st.button("💾 Save Changes to Master"):
-    edited.to_csv("Overall Master.csv", index=False)
-    st.success("✅ Changes saved to master")
+if st.button("💾 Save Changes"):
+    updated = grid["data"]
+    updated.to_csv("Overall Master.csv", index=False)
+    updated[["Item Code", "Status"]].to_csv("Status.csv", index=False)
+    st.success("✅ Master updated successfully!")
