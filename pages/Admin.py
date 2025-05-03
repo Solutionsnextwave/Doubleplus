@@ -1,1 +1,1 @@
-# Admin.py placeholder
+<admin-page-code-same-as-above>
