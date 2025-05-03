@@ -1,0 +1,21 @@
+{
+  "admin": {
+    "password": "Nemo_63",
+    "role": "admin",
+    "permissions": {
+      "Inventory": [
+        "view",
+        "edit",
+        "delete"
+      ],
+      "Reports": [
+        "view"
+      ],
+      "Users": [
+        "view",
+        "edit",
+        "delete"
+      ]
+    }
+  }
+}
