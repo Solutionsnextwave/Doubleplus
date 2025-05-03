@@ -9,7 +9,6 @@ from io import BytesIO
 
 st.set_page_config(page_title="Double Plus | Replenishment", layout="wide")
 st.markdown("<style>div.stButton > button {background-color:#0071BC; color:white;}</style>", unsafe_allow_html=True)
-
 st.image("Double Plus Logo.png", width=180)
 st.title("🧮 Daily Replenishment & Procurement Generator")
 st.markdown("Min = 2 weeks, Max = 4 weeks (configurable in Admin)")
@@ -62,7 +61,7 @@ if store_file and warehouse_file:
             def to_strips(row, column):
                 unit = str(row["Unit"]).lower()
                 val = row[column]
-                if any(x in unit for x in ["ml", "ltr", "gm", "g", "l"]):
+                if any(x in unit for x in ["ml", "ltr", "gm", "g", "l", "qty", "pieces"]):
                     return val
                 match = re.search(r"(\d+)", unit)
                 if match:
@@ -90,9 +89,7 @@ if store_file and warehouse_file:
             df["Procurement Qty"] = df.apply(calc_procurement, axis=1)
 
             today = datetime.today().strftime("%Y-%m-%d")
-
             export_cols = ["Item Code", "Medicines Name", "Manufacturer/Company", "Unit"]
-
             rep = df[df["Replenishment Qty"] > 0][export_cols + ["Replenishment Qty"]]
             rep = rep.rename(columns={"Unit": "Pack Size", "Replenishment Qty": "Qty"})
 
