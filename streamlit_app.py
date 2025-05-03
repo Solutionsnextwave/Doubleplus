@@ -21,7 +21,8 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.username = username
             st.success("Logged in successfully!")
-            st.experimental_rerun()
+            st.rerun()
+
         else:
             st.error("Invalid credentials")
 else:
